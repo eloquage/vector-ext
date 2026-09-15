@@ -94,6 +94,24 @@ jobs:
           FROM ${TYPEPHP_IMAGE}
           ARG EXTENSION_NAME
           ENV EXTENSION_NAME=$EXTENSION_NAME
+          RUN set -eux; \
+              test -n "${PHPX_HOME:-}"; \
+              rm -rf /tmp/phpx-static /tmp/phpx-include; \
+              mkdir -p /tmp/phpx-include; \
+              ln -s /usr/include/x86_64-linux-gnu/gmp.h /tmp/phpx-include/gmp.h; \
+              ln -s /usr/include/gmpxx.h /tmp/phpx-include/gmpxx.h; \
+              ln -s /usr/include/mpfr.h /tmp/phpx-include/mpfr.h; \
+              cmake -S "$PHPX_HOME/full-static" -B /tmp/phpx-static \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DPHPX_PHP_INCLUDE_DIR=/usr/local/include/php \
+                -DPHPX_GMP_INCLUDE_DIR=/tmp/phpx-include \
+                -DPHPX_GMP_LIB_DIR=/usr/lib/x86_64-linux-gnu \
+                -DPHPX_MPFR_INCLUDE_DIR=/tmp/phpx-include \
+                -DPHPX_MPFR_LIB_DIR=/usr/lib/x86_64-linux-gnu; \
+              cmake --build /tmp/phpx-static --parallel 2; \
+              rm "$PHPX_HOME/lib/libphpx.so"; \
+              cp /tmp/phpx-static/libphpx.a "$PHPX_HOME/lib/libphpx.a"; \
+              ln -s libphpx.a "$PHPX_HOME/lib/libphpx.so"
           WORKDIR /src
           COPY --from=package . /src
           RUN set -eux; \
@@ -103,6 +121,7 @@ jobs:
               SO="${EXTENSION_NAME}.so"; \
               if [ ! -f "$SO" ]; then SO="build/${EXTENSION_NAME}.so"; fi; \
               test -f "$SO"; \
+              if readelf -d "$SO" | grep -Fq 'libphpx.so'; then echo 'libphpx.so must not remain a runtime dependency' >&2; exit 1; fi; \
               export LD_LIBRARY_PATH="${PHPX_HOME}/lib:${LD_LIBRARY_PATH:-}"; \
               php -d "extension=/src/$SO" -r 'exit((extension_loaded(getenv("EXTENSION_NAME")) || extension_loaded("typephp_" . getenv("EXTENSION_NAME"))) ? 0 : 1);'; \
               php -d "extension=/src/$SO" vendor/bin/pest --ci --no-coverage; \
