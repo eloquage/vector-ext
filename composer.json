@@ -4,21 +4,12 @@
     "type": "php-ext",
     "license": "MIT",
     "require": {
-        "php": "^8.3"
+        "php": "^8.5"
     },
     "php-ext": {
-      "extension-name": "eloquage_vector"
-    },
-    "extra": {
-        "pie": {
-            "download-method": "pre-packaged-binary",
-            "asset-prefix": "php_eloquage_vector",
-            "php-version": "8.5",
-            "architecture": "x86_64",
-            "os": "Linux",
-            "libc": "glibc",
-            "thread-safety": "NTS"
-        }
+      "extension-name": "eloquage_vector",
+      "download-url-method": ["pre-packaged-binary"],
+      "os-families": ["linux"]
     },
     "homepage": "https://github.com/eloquage/vector-ext",
     "support": {

@@ -84,7 +84,7 @@ jobs:
               if [ ! -f "$SO" ]; then SO="build/${EXTENSION_NAME}.so"; fi; \
               test -f "$SO"; \
               export LD_LIBRARY_PATH="${PHPX_HOME}/lib:${LD_LIBRARY_PATH:-}"; \
-              php -d "extension=/src/$SO" -r 'exit(extension_loaded(getenv("EXTENSION_NAME")) ? 0 : 1);'; \
+              php -d "extension=/src/$SO" -r 'exit((extension_loaded(getenv("EXTENSION_NAME")) || extension_loaded("typephp_" . getenv("EXTENSION_NAME"))) ? 0 : 1);'; \
               php -d "extension=/src/$SO" vendor/bin/pest --ci --no-coverage; \
               mkdir -p /out; cp "$SO" /out/
           FROM scratch
@@ -108,7 +108,7 @@ jobs:
           fi
           test -f "artifacts/$EXTENSION_NAME.so"
           VERSION_NO_V="${VERSION#v}"
-          ARCHIVE="php_${EXTENSION_NAME}-${VERSION_NO_V}_php8.5-x86_64-Linux-glibc-N-debug-NTS.tar.gz"
+          ARCHIVE="php_${EXTENSION_NAME}-${VERSION_NO_V}_php8.5-x86_64-linux-glibc-nts.tgz"
           tar -czf "artifacts/$ARCHIVE" -C artifacts "$EXTENSION_NAME.so"
           tar -tzf "artifacts/$ARCHIVE" | grep -Fx "$EXTENSION_NAME.so"
 
