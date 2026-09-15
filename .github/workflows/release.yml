@@ -54,7 +54,7 @@ jobs:
           php -r '$m=json_decode(file_get_contents("source/composer.json"), true, 512, JSON_THROW_ON_ERROR); exit(($m["name"] ?? "") === getenv("RUNTIME_PACKAGE") ? 0 : 1);'
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{github.actor}}
