@@ -134,8 +134,7 @@ jobs:
             fi
           fi
           test -f "artifacts/$EXTENSION_NAME.so"
-          VERSION_NO_V="${VERSION#v}"
-          ARCHIVE="php_${EXTENSION_NAME}-${VERSION_NO_V}_php8.5-x86_64-linux-glibc-nts.tgz"
+          ARCHIVE="php_${EXTENSION_NAME}-${VERSION}_php8.5-x86_64-linux-glibc-nts.tgz"
           tar -czf "artifacts/$ARCHIVE" -C artifacts "$EXTENSION_NAME.so"
           tar -tzf "artifacts/$ARCHIVE" | grep -Fx "$EXTENSION_NAME.so"
 
@@ -143,4 +142,4 @@ jobs:
         env:
           GH_TOKEN: ${{github.token}}
           VERSION: ${{steps.version.outputs.version}}
-        run: gh release upload "$VERSION" "artifacts/php_${EXTENSION_NAME}-${VERSION#v}_php8.5-x86_64-linux-glibc-nts.tgz" --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$VERSION" "artifacts/php_${EXTENSION_NAME}-${VERSION}_php8.5-x86_64-linux-glibc-nts.tgz" --repo "$GITHUB_REPOSITORY" --clobber
