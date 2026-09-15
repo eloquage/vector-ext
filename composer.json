@@ -1,0 +1,17 @@
+{
+    "name": "eloquage/vector-ext",
+    "description": "Optional PIE-compatible TypePHP native extension for eloquage/vector.",
+    "type": "php-ext",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3"
+    },
+    "php-ext": {
+        "extension-name": "eloquage_vector"
+    },
+    "homepage": "https://github.com/eloquage/vector-ext",
+    "support": {
+        "source": "https://github.com/eloquage/vector-ext"
+    }
+}
+

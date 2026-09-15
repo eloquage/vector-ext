@@ -1,0 +1,118 @@
+name: Build and publish PIE binary
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Matching runtime and companion tag (for example v1.2.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  SOURCE_REPOSITORY: eloquage/vector
+  RUNTIME_PACKAGE: eloquage/vector
+  EXTENSION_NAME: eloquage_vector
+  TYPEPHP_IMAGE: ghcr.io/eloquage/typephp-builder:30b6f43
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout companion tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{github.event.release.tag_name || inputs.version}}
+
+      - name: Resolve and validate matching tags
+        id: version
+        env:
+          RELEASE_TAG: ${{github.event.release.tag_name || ''}}
+          INPUT_TAG: ${{inputs.version || ''}}
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG:-$INPUT_TAG}"
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Expected a vX.Y.Z release tag" >&2; exit 1 ;;
+          esac
+          git ls-remote --exit-code "https://github.com/$SOURCE_REPOSITORY.git" "refs/tags/$VERSION" >/dev/null
+          printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout matching runtime source
+        env:
+          VERSION: ${{steps.version.outputs.version}}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$VERSION" "https://github.com/$SOURCE_REPOSITORY.git" source
+          php -r '$m=json_decode(file_get_contents("source/composer.json"), true, 512, JSON_THROW_ON_ERROR); exit(($m["name"] ?? "") === getenv("RUNTIME_PACKAGE") ? 0 : 1);'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, load, and test the native module
+        env:
+          VERSION: ${{steps.version.outputs.version}}
+          CACHE_SCOPE: pie-vector
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cat > Dockerfile.native <<'EOF'
+          FROM ghcr.io/eloquage/typephp-builder:30b6f43
+          ARG EXTENSION_NAME
+          ENV EXTENSION_NAME=$EXTENSION_NAME
+          WORKDIR /src
+          COPY --from=package . /src
+          RUN set -eux; \
+              test -f project.yml || cp project.yml.example project.yml; \
+              composer install --prefer-dist --no-interaction --no-progress; \
+              tpc.php project.yml; \
+              SO="build/${EXTENSION_NAME}.so"; \
+              test -f "$SO"; \
+              export LD_LIBRARY_PATH="${PHPX_HOME}/lib:${LD_LIBRARY_PATH:-}"; \
+              php -d "extension=/src/$SO" -r 'exit(extension_loaded(getenv("EXTENSION_NAME")) ? 0 : 1);'; \
+              php -d "extension=/src/$SO" vendor/bin/pest --ci --no-coverage; \
+              mkdir -p /out; cp "$SO" /out/
+          FROM scratch
+          COPY --from=0 /out/ /
+          EOF
+          build_args=(
+            docker buildx build
+            --file Dockerfile.native
+            --build-context package=./source
+            --build-arg EXTENSION_NAME="$EXTENSION_NAME"
+            --cache-from "type=gha,scope=$CACHE_SCOPE"
+            --cache-to "type=gha,scope=$CACHE_SCOPE,mode=max"
+            --output type=local,dest=artifacts
+            .
+          )
+          if ! "${build_args[@]}"; then
+            echo "Cached BuildKit path failed; retrying clean" >&2
+            docker buildx build --file Dockerfile.native --build-context package=./source \
+              --build-arg EXTENSION_NAME="$EXTENSION_NAME" --no-cache \
+              --output type=local,dest=artifacts .
+          fi
+          test -f "artifacts/$EXTENSION_NAME.so"
+          VERSION_NO_V="${VERSION#v}"
+          ARCHIVE="php_${EXTENSION_NAME}-${VERSION_NO_V}_php8.5-x86_64-Linux-glibc-N-debug-NTS.tar.gz"
+          tar -czf "artifacts/$ARCHIVE" -C artifacts "$EXTENSION_NAME.so"
+          tar -tzf "artifacts/$ARCHIVE" | grep -Fx "$EXTENSION_NAME.so"
+
+      - name: Upload validated PIE asset
+        env:
+          GH_TOKEN: ${{github.token}}
+          VERSION: ${{steps.version.outputs.version}}
+        run: gh release upload "$VERSION" "artifacts/php_${EXTENSION_NAME}-${VERSION#v}_php8.5-x86_64-Linux-glibc-N-debug-NTS.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
