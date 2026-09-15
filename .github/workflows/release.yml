@@ -71,7 +71,8 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           cat > Dockerfile.native <<'EOF'
-          FROM ghcr.io/eloquage/typephp-builder:30b6f43
+          ARG TYPEPHP_IMAGE
+          FROM ${TYPEPHP_IMAGE}
           ARG EXTENSION_NAME
           ENV EXTENSION_NAME=$EXTENSION_NAME
           WORKDIR /src
@@ -95,6 +96,7 @@ jobs:
             --file Dockerfile.native
             --build-context package=./source
             --build-arg EXTENSION_NAME="$EXTENSION_NAME"
+            --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE"
             --cache-from "type=gha,scope=$CACHE_SCOPE"
             --cache-to "type=gha,scope=$CACHE_SCOPE,mode=max"
             --output type=local,dest=artifacts
@@ -103,7 +105,7 @@ jobs:
           if ! "${build_args[@]}"; then
             echo "Cached BuildKit path failed; retrying clean" >&2
             docker buildx build --file Dockerfile.native --build-context package=./source \
-              --build-arg EXTENSION_NAME="$EXTENSION_NAME" --no-cache \
+              --build-arg EXTENSION_NAME="$EXTENSION_NAME" --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE" --no-cache \
               --output type=local,dest=artifacts .
           fi
           test -f "artifacts/$EXTENSION_NAME.so"
@@ -116,4 +118,4 @@ jobs:
         env:
           GH_TOKEN: ${{github.token}}
           VERSION: ${{steps.version.outputs.version}}
-        run: gh release upload "$VERSION" "artifacts/php_${EXTENSION_NAME}-${VERSION#v}_php8.5-x86_64-Linux-glibc-N-debug-NTS.tar.gz" --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$VERSION" "artifacts/php_${EXTENSION_NAME}-${VERSION#v}_php8.5-x86_64-linux-glibc-nts.tgz" --repo "$GITHUB_REPOSITORY" --clobber
