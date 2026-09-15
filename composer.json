@@ -9,6 +9,8 @@
     "php-ext": {
       "extension-name": "eloquage_vector",
       "download-url-method": ["pre-packaged-binary"],
+      "support-zts": false,
+      "support-nts": true,
       "os-families": ["linux"]
     },
     "homepage": "https://github.com/eloquage/vector-ext",
