@@ -19,6 +19,8 @@ env:
   RUNTIME_PACKAGE: eloquage/vector
   EXTENSION_NAME: eloquage_vector
   TYPEPHP_IMAGE: ghcr.io/eloquage/typephp-builder:30b6f43
+  TYPEPHP_SOURCE_REPOSITORY: https://github.com/eloquage/typephp-builder.git
+  TYPEPHP_SOURCE_REF: 069f9f8c45dc7be4be2951cab1b2b2b2f936bc7c
 
 jobs:
   release:
@@ -51,6 +53,8 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "$VERSION" "https://github.com/$SOURCE_REPOSITORY.git" source
+          mkdir -p package-context
+          tar --exclude=.dockerignore --exclude=build --exclude=vendor --exclude=.git -C source -cf - . | tar -C package-context -xf -
           php -r '$m=json_decode(file_get_contents("source/composer.json"), true, 512, JSON_THROW_ON_ERROR); exit(($m["name"] ?? "") === getenv("RUNTIME_PACKAGE") ? 0 : 1);'
 
       - name: Log in to GHCR
@@ -63,6 +67,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Prepare pinned TypePHP builder
+        env:
+          TYPEPHP_IMAGE: ${{env.TYPEPHP_IMAGE}}
+          TYPEPHP_SOURCE_REPOSITORY: ${{env.TYPEPHP_SOURCE_REPOSITORY}}
+          TYPEPHP_SOURCE_REF: ${{env.TYPEPHP_SOURCE_REF}}
+        run: |
+          set -euo pipefail
+          if docker pull "$TYPEPHP_IMAGE" >/dev/null; then
+            echo "TYPEPHP_LOCAL_FALLBACK=false" >> "$GITHUB_ENV"
+          else
+            echo "The pinned GHCR image is unavailable; building its pinned public source commit." >&2
+            docker buildx build --builder default --pull --tag "$TYPEPHP_IMAGE" --load \
+              "${TYPEPHP_SOURCE_REPOSITORY}#${TYPEPHP_SOURCE_REF}"
+            echo "TYPEPHP_LOCAL_FALLBACK=true" >> "$GITHUB_ENV"
+          fi
       - name: Build, load, and test the native module
         env:
           VERSION: ${{steps.version.outputs.version}}
@@ -71,7 +90,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           cat > Dockerfile.native <<'EOF'
-          ARG TYPEPHP_IMAGE
+          ARG TYPEPHP_IMAGE=ghcr.io/eloquage/typephp-builder:30b6f43
           FROM ${TYPEPHP_IMAGE}
           ARG EXTENSION_NAME
           ENV EXTENSION_NAME=$EXTENSION_NAME
@@ -91,22 +110,28 @@ jobs:
           FROM scratch
           COPY --from=0 /out/ /
           EOF
-          build_args=(
+          if [ "${TYPEPHP_LOCAL_FALLBACK:-false}" = true ]; then
+            docker buildx build --builder default --file Dockerfile.native --build-context package=./package-context \
+              --build-arg EXTENSION_NAME="$EXTENSION_NAME" --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE" --no-cache \
+              --output type=local,dest=artifacts .
+          else
+            build_args=(
             docker buildx build
             --file Dockerfile.native
-            --build-context package=./source
+            --build-context package=./package-context
             --build-arg EXTENSION_NAME="$EXTENSION_NAME"
             --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE"
             --cache-from "type=gha,scope=$CACHE_SCOPE"
             --cache-to "type=gha,scope=$CACHE_SCOPE,mode=max"
             --output type=local,dest=artifacts
             .
-          )
-          if ! "${build_args[@]}"; then
-            echo "Cached BuildKit path failed; retrying clean" >&2
-            docker buildx build --file Dockerfile.native --build-context package=./source \
-              --build-arg EXTENSION_NAME="$EXTENSION_NAME" --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE" --no-cache \
-              --output type=local,dest=artifacts .
+            )
+            if ! "${build_args[@]}"; then
+              echo "Cached BuildKit path failed; retrying clean" >&2
+              docker buildx build --file Dockerfile.native --build-context package=./package-context \
+                --build-arg EXTENSION_NAME="$EXTENSION_NAME" --build-arg TYPEPHP_IMAGE="$TYPEPHP_IMAGE" --no-cache \
+                --output type=local,dest=artifacts .
+            fi
           fi
           test -f "artifacts/$EXTENSION_NAME.so"
           VERSION_NO_V="${VERSION#v}"
