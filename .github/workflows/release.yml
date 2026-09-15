@@ -80,7 +80,8 @@ jobs:
               test -f project.yml || cp project.yml.example project.yml; \
               composer install --prefer-dist --no-interaction --no-progress; \
               tpc.php project.yml; \
-              SO="build/${EXTENSION_NAME}.so"; \
+              SO="${EXTENSION_NAME}.so"; \
+              if [ ! -f "$SO" ]; then SO="build/${EXTENSION_NAME}.so"; fi; \
               test -f "$SO"; \
               export LD_LIBRARY_PATH="${PHPX_HOME}/lib:${LD_LIBRARY_PATH:-}"; \
               php -d "extension=/src/$SO" -r 'exit(extension_loaded(getenv("EXTENSION_NAME")) ? 0 : 1);'; \
